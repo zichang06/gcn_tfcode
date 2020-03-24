@@ -10,8 +10,8 @@ def parse_index_file(filename):
     """Parse index file."""
     index = []
     for line in open(filename):
-        index.append(int(line.strip()))
-    return index
+        index.append(int(line.strip()))  #  strip() 方法用于移除字符串头尾指定的字符（默认为空格或换行符）或字符序列。
+    return index  # cora, len(index) = 1000
 
 
 def sample_mask(idx, l):
@@ -52,36 +52,21 @@ def load_data(dataset_str):
 
     x, y, tx, ty, allx, ally, graph = tuple(objects)
 
-    # x     scipy.sparse.csr.csr_matrix
-    # y     numpy.ndarray
-    # tx    scipy.sparse.csr.csr_matrix
-    # ty    numpy.ndarray    
-    # allx  scipy.sparse.csr.csr_matrix
-    # ally  numpy.ndarray
-    # graph
-
-    # x.shape:(140, 1433); y.shape:(140, 7);tx.shape:(1000, 1433);ty.shape:(1708, 1433);
-    # allx.shape:(1708, 1433);ally.shape:(1708, 7)
-
-    # 测试数据集
-    # print(x[0][0],x.shape,type(x))  ##x是一个稀疏矩阵,记住1的位置,140个实例,每个实例的特征向量维度是1433  (140,1433)
-    # print(y[0],y.shape)   ##y是标签向量,7分类，140个实例 (140,7)
-
-    ##训练数据集
-    # print(tx[0][0],tx.shape,type(tx))  ##tx是一个稀疏矩阵,1000个实例,每个实例的特征向量维度是1433  (1000,1433)
-    # print(ty[0],ty.shape)   ##y是标签向量,7分类，1000个实例 (1000,7)
-
-    ##allx,ally和上面的形式一致
-    # print(allx[0][0],allx.shape,type(allx))  ##tx是一个稀疏矩阵,1708个实例,每个实例的特征向量维度是1433  (1708,1433)
-    # print(ally[0],ally.shape)   ##y是标签向量,7分类，1708个实例 (1708,7)
-
-    ##graph是一个字典，大图总共2708个节点
+    ## 对cora数据集：
+    # x     scipy.sparse.csr.csr_matrix (140, 1433)
+    # y     numpy.ndarray               (140, 7)
+    # tx    scipy.sparse.csr.csr_matrix (1000, 1433)
+    # ty    numpy.ndarray               (1000, 7)
+    # allx  scipy.sparse.csr.csr_matrix (1708, 1433)
+    # ally  numpy.ndarray               (1708, 7)
+    # graph collections.defaultdict
+    # graph是一个字典,len=2708,大图总共2708个节点
     # for i in graph:
     #     print(i,graph[i])
 
-
-    test_idx_reorder = parse_index_file("data/ind.{}.test.index".format(dataset_str))
-    test_idx_range = np.sort(test_idx_reorder)
+    # 测试数据集的索引乱序版
+    test_idx_reorder = parse_index_file("data/ind.{}.test.index".format(dataset_str))  # 测试数据集的索引乱序版
+    test_idx_range = np.sort(test_idx_reorder)  # 从小到大排序,如[1707,1708,1709,...2707]
 
     if dataset_str == 'citeseer':
         # Fix citeseer dataset (there are some isolated nodes in the graph)
@@ -94,8 +79,13 @@ def load_data(dataset_str):
         ty_extended[test_idx_range-min(test_idx_range), :] = ty
         ty = ty_extended
 
-    features = sp.vstack((allx, tx)).tolil()
+    # 将allx和tx叠起来并转化成LIL格式的feature,即输入一张整图
+    features = sp.vstack((allx, tx)).tolil()  # (2708,1433),LTL格式
+    # 把特征矩阵还原为其原本节点，和对应的邻接矩阵对应起来，因为之前是打乱的，不对齐的话，特征就和对应的节点搞错了。
+    # 比如测试集tx(1708-2707)的第0个节点，是原图的第2692号节点。
+    # ???那除测试集1000个外的其它节点呢？不需要变下么？因为allx没有乱序？
     features[test_idx_reorder, :] = features[test_idx_range, :]
+    # 邻接矩阵格式也是LIL的，并且shape为(2708, 2708)
     adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
 
     labels = np.vstack((ally, ty))
@@ -123,8 +113,10 @@ def sparse_to_tuple(sparse_mx):
     """Convert sparse matrix to tuple representation."""
     def to_tuple(mx):
         if not sp.isspmatrix_coo(mx):
-            mx = mx.tocoo()
-        coords = np.vstack((mx.row, mx.col)).transpose()
+            mx = mx.tocoo()  
+            # type(mx):scipy.sparse.coo.coo_matrix,将csr_matrix转成coo_matrix
+            # scipy.sparse.coo_matrix - A sparse matrix in COOrdinate format.
+        coords = np.vstack((mx.row, mx.col)).transpose()   # Stack arrays in sequence vertically (row wise). 一行接一行.
         values = mx.data
         shape = mx.shape
         return coords, values, shape
@@ -135,16 +127,21 @@ def sparse_to_tuple(sparse_mx):
     else:
         sparse_mx = to_tuple(sparse_mx)
 
-    return sparse_mx
+    return sparse_mx  # type:tuple
 
-
+# 处理特征:特征矩阵进行归一化并返回一个格式为(coords, values, shape)的元组
+# 特征矩阵的每一行的每个元素除以行和，处理后的每一行元素之和为1，正则化输入特征
 def preprocess_features(features):
     """Row-normalize feature matrix and convert to tuple representation"""
+    # a.sum()是将矩阵中所有的元素进行求和;a.sum(axis = 0)是每一列列相加;a.sum(axis = 1)是每一行相加
     rowsum = np.array(features.sum(1))
     r_inv = np.power(rowsum, -1).flatten()
     r_inv[np.isinf(r_inv)] = 0.
     r_mat_inv = sp.diags(r_inv)
+    # type(feature):scipy.sparse.lil.lil_matrix
+    # type(r_mat_inv):scipy.sparse.dia.dia_matrix
     features = r_mat_inv.dot(features)
+    # type(features):scipy.sparse.csr.csr_matrix
     return sparse_to_tuple(features)
 
 

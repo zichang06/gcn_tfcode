@@ -7,3 +7,5 @@
 *.tx
 *.x
 *.y
+*.pyc
+demo.py
