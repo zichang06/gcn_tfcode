@@ -31,8 +31,8 @@ adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_da
 # Some preprocessing
 features = preprocess_features(features)
 if FLAGS.model == 'gcn':
-    support = [preprocess_adj(adj)]
-    num_supports = 1
+    support = [preprocess_adj(adj)]  # support是邻接矩阵的归一化形式
+    num_supports = 1  # num_supports???
     model_func = GCN
 elif FLAGS.model == 'gcn_cheby':
     support = chebyshev_polynomials(adj, FLAGS.max_degree)
@@ -47,15 +47,21 @@ else:
 
 # Define placeholders
 placeholders = {
+    # 由于邻接矩阵是稀疏的，并且用LIL格式表示，因此定义为一个tf.sparse_placeholder(tf.float32)，可以节省内存???
+    # 一个list???
     'support': [tf.sparse_placeholder(tf.float32) for _ in range(num_supports)],
+    # features也是稀疏矩阵，也用LIL格式表示，因此定义为tf.sparse_placeholder(tf.float32)，维度(2708, 1433)
     'features': tf.sparse_placeholder(tf.float32, shape=tf.constant(features[2], dtype=tf.int64)),
     'labels': tf.placeholder(tf.float32, shape=(None, y_train.shape[1])),
-    'labels_mask': tf.placeholder(tf.int32),
-    'dropout': tf.placeholder_with_default(0., shape=()),
+    # shape: The shape of the tensor to be fed (optional). If the shape is not specified, you can feed a sparse tensor of any shape.
+    'labels_mask': tf.placeholder(tf.int32),  
+    'dropout': tf.placeholder_with_default(0., shape=()),  # ???shape=()空的，啥意思？任意形状都可???
     'num_features_nonzero': tf.placeholder(tf.int32)  # helper variable for sparse dropout
 }
 
 # Create model
+# print(features[2][1])
+# 1433
 model = model_func(placeholders, input_dim=features[2][1], logging=True)
 
 # Initialize session
@@ -84,9 +90,14 @@ for epoch in range(FLAGS.epochs):
     feed_dict.update({placeholders['dropout']: FLAGS.dropout})
 
     # Training step
-    outs = sess.run([model.opt_op, model.loss, model.accuracy], feed_dict=feed_dict)
+    # outs[1]:train_loss
+    # outs[2]:train_acc
+    outs = sess.run([model.opt_op, model.loss, model.accuracy], feed_dict=feed_dict)  # ???返回的啥？哪里定义的？
 
     # Validation
+    # cost:val_loss
+    # acc:val_acc
+    # duration:evaluate一次耗时
     cost, acc, duration = evaluate(features, support, y_val, val_mask, placeholders)
     cost_val.append(cost)
 
@@ -95,6 +106,7 @@ for epoch in range(FLAGS.epochs):
           "train_acc=", "{:.5f}".format(outs[2]), "val_loss=", "{:.5f}".format(cost),
           "val_acc=", "{:.5f}".format(acc), "time=", "{:.5f}".format(time.time() - t))
 
+    # we stop training if the validation loss does not decrease for 10 consecutive epochs
     if epoch > FLAGS.early_stopping and cost_val[-1] > np.mean(cost_val[-(FLAGS.early_stopping+1):-1]):
         print("Early stopping...")
         break

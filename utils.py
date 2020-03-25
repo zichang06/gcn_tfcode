@@ -129,10 +129,11 @@ def sparse_to_tuple(sparse_mx):
 
     return sparse_mx  # type:tuple
 
-# 处理特征:特征矩阵进行归一化并返回一个格式为(coords, values, shape)的元组
+# 处理特征:特征矩阵进行归一化,变成COO,并返回一个格式为(coords, values, shape)的元组
 # 特征矩阵的每一行的每个元素除以行和，处理后的每一行元素之和为1，正则化输入特征
 def preprocess_features(features):
     """Row-normalize feature matrix and convert to tuple representation"""
+    # type(features):lil_matrix
     # a.sum()是将矩阵中所有的元素进行求和;a.sum(axis = 0)是每一列列相加;a.sum(axis = 1)是每一行相加
     rowsum = np.array(features.sum(1))
     r_inv = np.power(rowsum, -1).flatten()
@@ -144,23 +145,29 @@ def preprocess_features(features):
     # type(features):scipy.sparse.csr.csr_matrix
     return sparse_to_tuple(features)
 
-
+# 邻接矩阵adj对称归一化并返回coo存储模式
 def normalize_adj(adj):
     """Symmetrically normalize adjacency matrix."""
-    adj = sp.coo_matrix(adj)
+    adj = sp.coo_matrix(adj)  # adj的类型由csr_matrix 转变为 coo_matrix.  为啥要转变???,上面features还是lil呢，计算速度更快？
     rowsum = np.array(adj.sum(1))
-    d_inv_sqrt = np.power(rowsum, -0.5).flatten()
+    d_inv_sqrt = np.power(rowsum, -0.5).flatten()  # np.power是element-wise
     d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0.
     d_mat_inv_sqrt = sp.diags(d_inv_sqrt)
-    return adj.dot(d_mat_inv_sqrt).transpose().dot(d_mat_inv_sqrt).tocoo()
+    return adj.dot(d_mat_inv_sqrt).transpose().dot(d_mat_inv_sqrt).tocoo()  # (AD)^(T)D = D^(T)AD
 
 
+# 将邻接矩阵加上自环以后，对称归一化，并存储为COO模式，最后返回元组格式
 def preprocess_adj(adj):
     """Preprocessing of adjacency matrix for simple GCN model and conversion to tuple representation."""
-    adj_normalized = normalize_adj(adj + sp.eye(adj.shape[0]))
+    adj_normalized = normalize_adj(adj + sp.eye(adj.shape[0]))  # A += I, D^(T)AD
     return sparse_to_tuple(adj_normalized)
 
-
+# 构建输入字典并返回
+# Python 字典(Dictionary) dict.update(dict2) 函数把字典dict2的键/值对更新到dict里。
+#labels和labels_mask传入的是具体的值，例如
+# labels=y_train,labels_mask=train_mask；
+# labels=y_val,labels_mask=val_mask；
+# labels=y_test,labels_mask=test_mask；
 def construct_feed_dict(features, support, labels, labels_mask, placeholders):
     """Construct feed dictionary."""
     feed_dict = dict()
