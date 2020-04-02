@@ -109,7 +109,7 @@ def load_data(dataset_str):
     return adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask
 
 
-def sparse_to_tuple(sparse_mx):
+def sparse_to_tuple(sparse_mx):  # 把sparse_mx list中的每个稀疏矩阵都转成
     """Convert sparse matrix to tuple representation."""
     def to_tuple(mx):
         if not sp.isspmatrix_coo(mx):
@@ -152,7 +152,7 @@ def normalize_adj(adj):
     rowsum = np.array(adj.sum(1))
     d_inv_sqrt = np.power(rowsum, -0.5).flatten()  # np.power是element-wise
     d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0.
-    d_mat_inv_sqrt = sp.diags(d_inv_sqrt)
+    d_mat_inv_sqrt = sp.diags(d_inv_sqrt)  # D^(-1/2)
     return adj.dot(d_mat_inv_sqrt).transpose().dot(d_mat_inv_sqrt).tocoo()  # (AD)^(T)D = D^(T)AD
 
 
@@ -176,6 +176,7 @@ def construct_feed_dict(features, support, labels, labels_mask, placeholders):
     feed_dict.update({placeholders['features']: features})
     feed_dict.update({placeholders['support'][i]: support[i] for i in range(len(support))})
     feed_dict.update({placeholders['num_features_nonzero']: features[1].shape})
+    # features[1].shape: (49216,); features[0].shape: (49216,2), type(features[1].shape):tuple
     return feed_dict
 
 
@@ -183,20 +184,20 @@ def chebyshev_polynomials(adj, k):
     """Calculate Chebyshev polynomials up to order k. Return a list of sparse matrices (tuple representation)."""
     print("Calculating Chebyshev polynomials up to order {}...".format(k))
 
-    adj_normalized = normalize_adj(adj)
-    laplacian = sp.eye(adj.shape[0]) - adj_normalized
-    largest_eigval, _ = eigsh(laplacian, 1, which='LM')
-    scaled_laplacian = (2. / largest_eigval[0]) * laplacian - sp.eye(adj.shape[0])
+    adj_normalized = normalize_adj(adj)  # D^(T)AD  (D → D^(-1/2))    type:COO
+    laplacian = sp.eye(adj.shape[0]) - adj_normalized   # L^sys = D^(T)LD = I - D^(T)AD  type:CSR
+    largest_eigval, _ = eigsh(laplacian, 1, which='LM')  # 获取L^sys最大的特征值
+    scaled_laplacian = (2. / largest_eigval[0]) * laplacian - sp.eye(adj.shape[0])  # 式(5)下第一行 L~  type:CSR
 
     t_k = list()
-    t_k.append(sp.eye(adj.shape[0]))
-    t_k.append(scaled_laplacian)
+    t_k.append(sp.eye(adj.shape[0]))  # I  第0阶  scipy.sparse.dia.dia_matrix  
+    t_k.append(scaled_laplacian)  # L  第1阶  CSR
 
     def chebyshev_recurrence(t_k_minus_one, t_k_minus_two, scaled_lap):
-        s_lap = sp.csr_matrix(scaled_lap, copy=True)
-        return 2 * s_lap.dot(t_k_minus_one) - t_k_minus_two
+        s_lap = sp.csr_matrix(scaled_lap, copy=True)  # 好像原来也是CSR
+        return 2 * s_lap.dot(t_k_minus_one) - t_k_minus_two  # Tk(L)=2LTk-1(L)-Tk-2(L)
 
-    for i in range(2, k+1):
+    for i in range(2, k+1):  # 2~k阶
         t_k.append(chebyshev_recurrence(t_k[-1], t_k[-2], scaled_laplacian))
 
     return sparse_to_tuple(t_k)
