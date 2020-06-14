@@ -142,7 +142,8 @@ class Dense(Layer):
 
         # transform
         # 呃啊，其实就是单纯的MLP全连接，x的各列就是通道，然后映射...
-        output = dot(x, self.vars['weights'], sparse=self.sparse_inputs)
+        # X没有先乘以L，即X没有获取邻居信息
+        output = dot(x, self.vars['weights'], sparse=self.sparse_inputs) # X * W
 
         # bias
         if self.bias:
